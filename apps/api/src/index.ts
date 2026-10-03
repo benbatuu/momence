@@ -1,114 +1,138 @@
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { swaggerUI } from '@hono/swagger-ui';
-import { logger } from 'hono/logger';
-import { cors } from 'hono/cors';
 import { etag } from 'hono/etag';
 import { secureHeaders } from 'hono/secure-headers';
-import type { AppEnv } from './types/env';
-import { globalErrorHandler } from './middlewares/error.middleware';
-import { tenantMiddleware } from './middlewares/tenant.middleware';
-import { authRoutes } from './routes/auth.routes';
-import { userRoutes } from './routes/user.routes';
-import { packageRoutes } from './routes/package.routes';
-import { classRoutes } from './routes/class.routes';
-import { bookingRoutes } from './routes/booking.routes';
-import { appointmentRoutes } from './routes/appointment.routes';
-import { videoRoutes } from './routes/video.routes';
-import { productRoutes } from './routes/product.routes';
-import { studioRoutes } from './routes/studio.routes';
-import { workshopRoutes } from './routes/workshop.routes';
-import { payoutRoutes } from './routes/payout.routes';
-import { reportRoutes } from './routes/report.routes';
-import { auditLogRoutes } from './routes/auditlog.routes';
-import { financialRoutes } from './routes/financial.routes';
-import { studioSettingsRoutes } from './routes/studio.settings.routes';
+import { env } from './config/env';
+import { logger } from './core/logger';
+import { requestIdMiddleware } from './core/middlewares/request-id';
+import { rfc7807ErrorFilter } from './core/middlewares/error-filter';
+import { corsPolicyMiddleware } from './core/middlewares/cors';
+import { createRateLimiter } from './core/middlewares/rate-limit';
 
-// Standard Hono yerine OpenAPIHono kullanıyoruz
-const app = new OpenAPIHono<AppEnv>();
+import { createProblemDetails } from './core/errors/problem-details';
+import { ErrorCodes } from './core/errors/error-codes';
 
-app.use('*', cors({
-    origin: (origin) => {
-      // Geliştirme ortamı ve dinamik subdomain'ler için izin verilen origin'ler
-      if (
-        !origin ||
-        origin.includes('localhost') ||
-        origin.endsWith('.localhost:3000') ||
-        origin.endsWith('.yourdomain.com') // Prod domaininiz
-      ) {
-        return origin || '*';
-      }
-      return 'http://localhost:3000';
-    },
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowHeaders: [
-      'Content-Type',
-      'Authorization',
-      'x-studio-subdomain', // Özel tenant header'ımız
-      'X-Requested-With',
-    ],
-    exposeHeaders: ['Content-Length', 'x-studio-subdomain'],
-    maxAge: 600, // Preflight isteklerini 10 dakika önbellekle
-    credentials: true, // withCredentials: true kullanımı için KRİTİK!
-  })
-);
+// Rota modülleri
+import { healthRouter } from './modules/health/health.routes';
+import { adminRouter } from './modules/admin/admin.routes';
+import { meRouter } from './modules/me/me.routes';
+import { publicRouter } from './modules/public/public.routes';
+import { webhooksRouter } from './modules/webhooks/webhooks.routes';
+
+// OpenAPI Destekli Hono Uygulaması (Global Doğrulama Hook'u ile)
+const app = new OpenAPIHono({
+  defaultHook: (result, c) => {
+    if (!result.success && result.error) {
+      const issues = (result.error as any).issues || (result.error as any).errors || [];
+      const invalidParams = issues.map((e: any) => ({
+        name: (e.path || []).join('.'),
+        reason: e.message || 'Geçersiz değer',
+      }));
+      const requestId = c.get('requestId') || c.req.header('x-request-id') || crypto.randomUUID();
+      const problem = createProblemDetails({
+        status: 422,
+        code: ErrorCodes.VALIDATION_ERROR,
+        detail: 'İstek parametreleri veya gövdesi doğrulanamadı',
+        instance: c.req.path,
+        requestId,
+        invalidParams,
+      });
+      c.header('Content-Type', 'application/problem+json');
+      return c.json(problem, 422);
+    }
+  },
+});
+
+// 1. Temel Güvenlik ve Kimlik Ara Katmanları
+app.use('*', requestIdMiddleware);
+app.use('*', corsPolicyMiddleware);
 app.use('*', etag());
 app.use('*', secureHeaders());
-app.onError(globalErrorHandler);
 
+// 2. Yapılandırılmış İstek Günlükleme (Structured Logging)
 app.use('*', async (c, next) => {
-  logger();
+  const start = Date.now();
+  const requestId = c.get('requestId');
+  const { method, path } = c.req;
+
+  logger.debug({ requestId, method, path }, 'HTTP İstek Başladı');
+
   await next();
-  c.header('X-Powered-By', 'bennbatuu');
+
+  const durationMs = Date.now() - start;
+  const status = c.res.status;
+
+  logger.info({ requestId, method, path, status, durationMs }, 'HTTP İstek Tamamlandı');
 });
 
-// Health check
-app.get('/health', (c) => {
-  return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+// 3. Genel Hız Sınırlayıcı (Rate Limiter - Redis Destekli)
+app.use(
+  '/api/*',
+  createRateLimiter({
+    windowMs: 60000,
+    max: 120, // Dakikada 120 istek
+    keyPrefix: 'global',
+  })
+);
+
+// 4. Global RFC 7807 Hata Filtresi
+app.onError(rfc7807ErrorFilter);
+
+// 5. 404 Kaynak Bulunamadı Filtresi (RFC 7807 Uyumlu)
+app.notFound((c) => {
+  const requestId = c.get('requestId');
+  c.header('Content-Type', 'application/problem+json');
+  return c.json(
+    {
+      type: 'https://api.studio-os.local/errors/NOT_FOUND',
+      title: 'Kaynak Bulunamadı',
+      status: 404,
+      detail: `İstenen endpoint mevcut değil: ${c.req.method} ${c.req.path}`,
+      instance: c.req.path,
+      code: 'NOT_FOUND',
+      requestId,
+      timestamp: new Date().toISOString(),
+    },
+    404
+  );
 });
 
-// Tenant Middleware
-app.use('/api/*', tenantMiddleware);
+// 6. Altyapı ve Sağlık Kontrolü Uçları (/health, /ready, /status)
+app.route('/', healthRouter);
 
-// API Rotaları
-app.route('/api/auth', authRoutes);
-app.route('/api/users', userRoutes);
-app.route('/api/packages', packageRoutes);
-app.route('/api/classes', classRoutes);
-app.route('/api/bookings', bookingRoutes);
-app.route('/api/appointments', appointmentRoutes);
-app.route('/api/videos', videoRoutes);
-app.route('/api/products', productRoutes);
-app.route('/api/super-admin/studios', studioRoutes);
-app.route('/api/workshops', workshopRoutes);
-app.route('/api/payouts', payoutRoutes);
-app.route('/api/reports', reportRoutes);
-app.route('/api/auditlogs', auditLogRoutes);
-app.route('/api/financials', financialRoutes);
-app.route('/api/studio-settings', studioSettingsRoutes);
+// 7. /v1 Sürümleme Yüzeyleri (Bölüm 10.3)
+app.route('/v1/admin', adminRouter);
+app.route('/v1/me', meRouter);
+app.route('/v1/public', publicRouter);
+app.route('/v1/webhooks', webhooksRouter);
 
-// OpenAPI JSON Endpoint Spec (Otomatik üretilir)
+// 8. OpenAPI 3.1 Belge Üretimi
 app.doc('/doc', {
-  openapi: '3.0.0',
+  openapi: '3.1.0',
   info: {
-    title: 'Momence-tr SaaS API',
+    title: 'Studio OS API',
     version: '1.0.0',
-    description: 'Multi-tenant Pilates & Yoga Stüdyo Yönetim API Dokümantasyonu',
+    description: 'Butik fitness ve wellness stüdyoları için modüler monolit yönetim API dokümantasyonu.',
+    contact: {
+      name: 'Studio OS Mühendislik Ekibi',
+    },
   },
+  servers: [
+    {
+      url: `http://localhost:${env.PORT}`,
+      description: 'Yerel Geliştirme Sunucusu',
+    },
+  ],
   security: [{ BearerAuth: [] }],
 });
 
-// Swagger Security Scheme
-app.openAPIRegistry.registerComponent('securitySchemes', 'BearerAuth', {
-  type: 'http',
-  scheme: 'bearer',
-  bearerFormat: 'JWT',
-  description: 'Lütfen JWT Access Token bilginizi girin.',
-});
-
-// Swagger UI Arayüzü
+// 9. Swagger UI Arayüzü
 app.get('/swagger', swaggerUI({ url: '/doc' }));
 
+logger.info(`🚀 Studio OS API ${env.NODE_ENV} modunda başlatıldı: http://localhost:${env.PORT}`);
+logger.info(`📖 OpenAPI Dokümantasyonu (Swagger): http://localhost:${env.PORT}/swagger`);
+
 export default {
-  port: process.env.PORT || 3001,
+  port: env.PORT,
   fetch: app.fetch,
 };

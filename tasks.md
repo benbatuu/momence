@@ -628,7 +628,7 @@ Kural: Modüller yalnızca birbirinin **public servis arayüzünü** çağırır
 - **Bağımlılık:** T-002, T-003
 - **Detay:** Modül iskeletleri (Bölüm 10.2). `/v1` sürümleme, global doğrulama (class-validator/zod), RFC 7807 hata filtresi + hata kodu kataloğu, `X-Request-Id` ara katmanı, yapılandırılmış log, yapılandırma yükleyici (env şeması doğrulaması), `/health` ve `/ready`, OpenAPI üretimi (Swagger), CORS politikası iskeleti, rate limit iskeleti (Redis).
 - **Kabul:** `/health` yeşil; OpenAPI belgesi üretilir; hata yanıtları tutarlı formatta.
-- **Durum:** ⬜ Beklemede
+- **Durum:** ✅ Bitti
 
 ### T-006 · Veritabanı katmanı ve konvansiyonlar
 - **Etiket:** altyapı · veri
