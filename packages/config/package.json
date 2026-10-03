@@ -1,0 +1,11 @@
+{
+  "name": "@studio-os/config",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'build config'",
+    "lint": "echo 'lint config'",
+    "typecheck": "echo 'typecheck config'",
+    "test": "echo 'test config'"
+  }
+}

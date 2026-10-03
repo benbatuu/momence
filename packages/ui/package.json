@@ -1,0 +1,11 @@
+{
+  "name": "@studio-os/ui",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'build ui'",
+    "lint": "echo 'lint ui'",
+    "typecheck": "echo 'typecheck ui'",
+    "test": "echo 'test ui'"
+  }
+}

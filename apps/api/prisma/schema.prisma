@@ -1,0 +1,559 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==========================================
+// 1. TENANT (Studio)
+// ==========================================
+model Tenant {
+  id       String  @id @default(uuid())
+  slug     String  @unique
+  name     String
+  phone    String?
+  address  String?
+  logoUrl  String?
+  timezone String  @default("Europe/Istanbul")
+  currency String  @default("TRY")
+  isActive Boolean @default(true)
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedBy String?
+
+  users        User[]
+  locations    Location[]
+  categories   Category[]
+  offerings    Offering[]
+  products     Product[]
+  terms        Term[]
+  moneyLedgers MoneyLedger[]
+  outboxEvents OutboxEvent[]
+  auditLogs    AuditLog[]
+
+  @@map("tenants")
+}
+
+// ==========================================
+// 2. IDENTITY (User, Customer, Staff)
+// ==========================================
+enum Role {
+  OWNER
+  ADMIN
+  INSTRUCTOR
+  RECEPTION
+  CUSTOMER
+}
+
+model User {
+  id           String  @id @default(uuid())
+  tenantId     String
+  role         Role    @default(CUSTOMER)
+  email        String
+  passwordHash String?
+  name         String
+  phone        String?
+  bio          String?
+  isActive     Boolean @default(true)
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedBy String?
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer?
+  staff    Staff?
+
+  @@unique([email, tenantId])
+  @@map("users")
+}
+
+model Customer {
+  id       String   @id @default(uuid())
+  tenantId String
+  userId   String   @unique
+  notes    String?
+  tags     String[]
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedBy String?
+
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purchases       Purchase[]
+  entitlements    Entitlement[]
+  bookings        Booking[]
+  waitlistEntries WaitlistEntry[]
+  creditLedgers   CreditLedger[]
+
+  @@map("customers")
+}
+
+model Staff {
+  id         String  @id @default(uuid())
+  tenantId   String
+  userId     String  @unique
+  publicName String?
+  bio        String?
+  photoUrl   String?
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedBy String?
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions Session[]
+
+  @@map("staff")
+}
+
+// ==========================================
+// 3. FACILITIES (Location, Room)
+// ==========================================
+model Location {
+  id       String  @id @default(uuid())
+  tenantId String
+  name     String
+  address  String?
+  timezone String  @default("Europe/Istanbul")
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rooms  Room[]
+
+  @@map("locations")
+}
+
+model Room {
+  id         String @id @default(uuid())
+  tenantId   String
+  locationId String
+  name       String
+  capacity   Int
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedBy String?
+
+  location Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  sessions Session[]
+
+  @@map("rooms")
+}
+
+// ==========================================
+// 4. CATALOG (Category, Product, Offering)
+// ==========================================
+model Category {
+  id          String  @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedBy String?
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  offerings Offering[]
+  products  Product[]
+
+  @@map("categories")
+}
+
+enum OfferingType {
+  CLASS
+  APPOINTMENT
+  WORKSHOP
+}
+
+model Offering {
+  id          String       @id @default(uuid())
+  tenantId    String
+  categoryId  String?
+  type        OfferingType @default(CLASS)
+  title       String
+  description String?
+  durationMin Int          @default(50)
+  capacity    Int          @default(10)
+  dropInPrice BigInt?
+  currency    String       @default("TRY")
+
+  // Politikalar
+  freeCancelHours Int     @default(12)
+  lateCancelFee   BigInt?
+  noShowFee       BigInt?
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedBy String?
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id])
+  series   Series[]
+
+  @@map("offerings")
+}
+
+enum ProductType {
+  DROP_IN
+  PACK
+  MEMBERSHIP
+  INTRO_OFFER
+}
+
+model Product {
+  id          String      @id @default(uuid())
+  tenantId    String
+  categoryId  String?
+  name        String
+  description String?
+  type        ProductType
+  price       BigInt
+  vatRate     Int         @default(20) // Yüzde
+  currency    String      @default("TRY")
+
+  creditCount       Int? // Null = sınırsız
+  validityDays      Int?
+  allowInstallments Boolean @default(false)
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedBy String?
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category  Category?  @relation(fields: [categoryId], references: [id])
+  purchases Purchase[]
+
+  @@map("products")
+}
+
+// ==========================================
+// 5. SCHEDULING (Term, Series, Session)
+// ==========================================
+model Term {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  startDate DateTime
+  endDate   DateTime
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedBy String?
+
+  tenant Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  series Series[]
+
+  @@map("terms")
+}
+
+model Series {
+  id         String    @id @default(uuid())
+  tenantId   String
+  offeringId String
+  termId     String?
+  rrule      String // RFC 5545
+  startTime  String // Örn: "07:00"
+  startDate  DateTime
+  endDate    DateTime?
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedBy String?
+
+  offering Offering  @relation(fields: [offeringId], references: [id], onDelete: Cascade)
+  term     Term?     @relation(fields: [termId], references: [id])
+  sessions Session[]
+
+  @@map("series")
+}
+
+enum SessionStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+model Session {
+  id       String  @id @default(uuid())
+  tenantId String
+  seriesId String?
+  roomId   String?
+  staffId  String?
+
+  startsAt DateTime // UTC
+  endsAt   DateTime // UTC
+  capacity Int
+  status   SessionStatus @default(PUBLISHED)
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedBy String?
+
+  series   Series?         @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  room     Room?           @relation(fields: [roomId], references: [id])
+  staff    Staff?          @relation(fields: [staffId], references: [id])
+  bookings Booking[]
+  waitlist WaitlistEntry[]
+
+  @@map("sessions")
+}
+
+// ==========================================
+// 6. BOOKING & WAITLIST
+// ==========================================
+enum BookingStatus {
+  CONFIRMED
+  WAITLISTED
+  CANCELLED
+  LATE_CANCELLED
+  NO_SHOW
+  ATTENDED
+}
+
+model Booking {
+  id         String        @id @default(uuid())
+  tenantId   String
+  sessionId  String
+  customerId String
+  status     BookingStatus @default(CONFIRMED)
+
+  version   Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  deletedBy String?
+
+  session       Session        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  customer      Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  creditLedgers CreditLedger[]
+
+  @@unique([sessionId, customerId])
+  @@map("bookings")
+}
+
+model WaitlistEntry {
+  id         String @id @default(uuid())
+  tenantId   String
+  sessionId  String
+  customerId String
+  order      Int
+
+  version   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session  Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("waitlist_entries")
+}
+
+// ==========================================
+// 7. ENTITLEMENTS & LEDGERS
+// ==========================================
+model Purchase {
+  id         String @id @default(uuid())
+  tenantId   String
+  customerId String
+  productId  String
+  totalPrice BigInt
+  currency   String @default("TRY")
+
+  version   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product      Product       @relation(fields: [productId], references: [id])
+  entitlements Entitlement[]
+  payments     Payment[]
+
+  @@map("purchases")
+}
+
+enum EntitlementStatus {
+  ACTIVE
+  EXPIRED
+  EXHAUSTED
+  CANCELLED
+}
+
+model Entitlement {
+  id         String            @id @default(uuid())
+  tenantId   String
+  customerId String
+  purchaseId String
+  status     EntitlementStatus @default(ACTIVE)
+  remaining  Int // -1 ise sınırsız
+  startsAt   DateTime
+  endsAt     DateTime
+
+  version   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer      Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  purchase      Purchase       @relation(fields: [purchaseId], references: [id])
+  creditLedgers CreditLedger[]
+
+  @@map("entitlements")
+}
+
+enum CreditEntryType {
+  GRANT
+  CONSUME
+  REFUND
+  EXPIRE
+  ADJUST
+}
+
+model CreditLedger {
+  id            String          @id @default(uuid())
+  tenantId      String
+  entitlementId String
+  customerId    String
+  bookingId     String?
+  type          CreditEntryType
+  amount        Int // Tüketim için negatif
+  reason        String?
+  actorId       String?
+
+  occurredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  entitlement Entitlement @relation(fields: [entitlementId], references: [id], onDelete: Cascade)
+  customer    Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  booking     Booking?    @relation(fields: [bookingId], references: [id])
+
+  @@map("credit_ledger")
+}
+
+model MoneyLedger {
+  id          String  @id @default(uuid())
+  tenantId    String
+  journalId   String
+  account     String // cash_clearing, deferred_revenue, revenue vs.
+  amount      BigInt // Kuruş, borç(+) alacak(-)
+  currency    String  @default("TRY")
+  refType     String // purchase, payment, refund, booking
+  refId       String
+  description String?
+
+  occurredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, account])
+  @@index([journalId])
+  @@map("money_ledger")
+}
+
+// ==========================================
+// 8. PAYMENTS
+// ==========================================
+enum PaymentStatus {
+  CREATED
+  PENDING_3DS
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REFUNDED
+  VOIDED
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  tenantId      String
+  purchaseId    String?
+  amount        BigInt
+  currency      String        @default("TRY")
+  status        PaymentStatus @default(CREATED)
+  provider      String // iyzico, nakit, havale
+  transactionId String?
+
+  version   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  purchase Purchase? @relation(fields: [purchaseId], references: [id])
+
+  @@map("payments")
+}
+
+// ==========================================
+// 9. PLATFORM (Outbox, Audit)
+// ==========================================
+enum OutboxStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+model OutboxEvent {
+  id          String       @id @default(uuid())
+  tenantId    String
+  eventType   String
+  payload     Json
+  status      OutboxStatus @default(PENDING)
+  retries     Int          @default(0)
+  availableAt DateTime     @default(now())
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status, availableAt])
+  @@map("outbox_events")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  actor     String // "userId" veya "system"
+  action    String
+  entity    String
+  entityId  String
+  before    Json?
+  after     Json?
+  ip        String?
+  userAgent String?
+  requestId String?
+  at        DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("audit_logs")
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@studio-os/hosted",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'build hosted'",
+    "lint": "echo 'lint hosted'",
+    "typecheck": "echo 'typecheck hosted'",
+    "test": "echo 'test hosted'"
+  }
+}

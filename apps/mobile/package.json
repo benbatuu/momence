@@ -1,0 +1,11 @@
+{
+  "name": "@studio-os/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'build mobile'",
+    "lint": "echo 'lint mobile'",
+    "typecheck": "echo 'typecheck mobile'",
+    "test": "echo 'test mobile'"
+  }
+}

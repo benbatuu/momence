@@ -1,0 +1,19 @@
+# Gitleaks Configuration for Studio OS Monorepo
+title = "Studio OS Gitleaks Config"
+
+[allowlist]
+description = "Geliştirme şablonları, testler ve dokümantasyon için izin verilen örnekler"
+paths = [
+  '''^\.env\.example$''',
+  '''^docs/''',
+  '''^README\.md$''',
+  '''^tasks\.md$''',
+  '''^momence\.md$'''
+]
+regexes = [
+  '''studio_os_secret''',
+  '''redis_secret''',
+  '''dev-jwt-secret-change-in-prod''',
+  '''dev-access-secret-change-in-prod''',
+  '''dev-refresh-secret-change-in-prod'''
+]

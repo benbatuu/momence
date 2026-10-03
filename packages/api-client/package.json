@@ -1,0 +1,11 @@
+{
+  "name": "@studio-os/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'build api-client'",
+    "lint": "echo 'lint api-client'",
+    "typecheck": "echo 'typecheck api-client'",
+    "test": "echo 'test api-client'"
+  }
+}

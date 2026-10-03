@@ -1,0 +1,20 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Studio OS API",
+    "version": "1.0.0",
+    "description": "Multi-tenant Pilates & Yoga Stüdyo Yönetim API"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Sağlık Kontrolü",
+        "responses": {
+          "200": {
+            "description": "Sunucu durumu"
+          }
+        }
+      }
+    }
+  }
+}

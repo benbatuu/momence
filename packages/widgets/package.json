@@ -1,0 +1,11 @@
+{
+  "name": "@studio-os/widgets",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'build widgets'",
+    "lint": "echo 'lint widgets'",
+    "typecheck": "echo 'typecheck widgets'",
+    "test": "echo 'test widgets'"
+  }
+}
